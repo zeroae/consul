@@ -1,3 +1,9 @@
+## 0.7.3-rfc2782 (January 30, 2017)
+
+FEATURES:
+
+* **RFC2782:** Support query DNS queries of the type `_<service>._<protocol>[.service][.datacenter]<.domain>`
+
 ## 0.7.3 (January 26, 2017)
 
 FEATURES:
