@@ -29,8 +29,8 @@ cd $DIR
 # Generate the tag.
 if [ -z $NOTAG ]; then
   echo "==> Tagging..."
-  git commit --allow-empty -a --gpg-sign=348FFC4C -m "Release v$VERSION"
-  git tag -a -m "Version $VERSION" -s -u 348FFC4C "v${VERSION}" master
+  git commit --allow-empty -S -a -m "Release v$VERSION"
+  git tag -a -m "Version $VERSION" -s "v${VERSION}" master
 fi
 
 # Do a hermetic build inside a Docker container.
@@ -52,7 +52,7 @@ pushd ./pkg/dist
 shasum -a256 * > ./consul_${VERSION}_SHA256SUMS
 if [ -z $NOSIGN ]; then
   echo "==> Signing..."
-  gpg --default-key 348FFC4C --detach-sig ./consul_${VERSION}_SHA256SUMS
+  gpg --detach-sig ./consul_${VERSION}_SHA256SUMS
 fi
 popd
 
