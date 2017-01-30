@@ -3,9 +3,12 @@ language: go
 go:
   - 1.7.4
 
+go_import_path: github.com/hashicorp/consul
+
 branches:
   only:
     - master
+    - /f-.*-v.*/
 
 script:
   - make ci
