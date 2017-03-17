@@ -297,6 +297,12 @@ func (d *DNSServer) dispatch(network string, req, resp *dns.Msg) {
 	// By default the query is in the default datacenter
 	datacenter := d.agent.config.Datacenter
 
+    // If it is TXT query we bypass the existing parsing.
+    if req.Question[0].QType == dns.TypeTXT {
+        d.kvsLookup(network, req, resp)
+        return
+    }
+
 	// Get the QName without the domain suffix
 	qName := strings.ToLower(dns.Fqdn(req.Question[0].Name))
 	qName = strings.TrimSuffix(qName, d.domain)
@@ -622,6 +628,67 @@ func trimUDPResponse(config *DNSConfig, resp *dns.Msg) (trimmed bool) {
 	return len(resp.Answer) < numAnswers
 }
 
+// kvsLookup is used to handle a TXT query
+func (d *DNSServer) kvsLookup(req, resp *dns.Msg) {
+    datacenter := agent.config.Datacenter
+    args := &structs.KeyRequest {
+        Datacenter: datacenter,
+        Key:        "/agent/dns/IN/TXT/_kerberos",
+        QueryOptions:   structs.QueryOptions{
+            Token:      d.agent.config.ACLToken,
+            AllowStale: *d.config.AllowStale,
+        },
+    }
+
+    var out structs.IndexedDirEntries
+RPC:
+    if err := d.agent.RPC("KVS.Get", args, &get); err != nil {
+        d.logger.Printf("[ERR] dns: rpc error: %v", err)
+        resp.SetRCode(req, dns.RcodeServerFailure)
+        return
+    }
+
+    if args.AllowStale {
+        if out.LastContact > d.config.MaxStale {
+            args.AllowStale = false
+            d.logger.Printf("[WARN] dns: Query results too stale, re-requesting")
+            goto RPC
+        } else if out.LastContact > staleCounterThreshold {
+			metrics.IncrCounter([]string{"consul", "dns", "stale_queries"}, 1)
+		}
+    }
+
+	// If we have no nodes, return not found!
+	if len(out.Entries) == 0 {
+		d.addSOA(d.domain, resp)
+		resp.SetRcode(req, dns.RcodeNameError)
+		return
+	}
+
+	// Add various responses depending on the request
+	qType := req.Question[0].Qtype
+	if qType == dns.TypeTXT {
+		d.kvsTextRecords(datacenter, out.Entries, req, resp)
+	}
+
+	// If the network is not TCP, restrict the number of responses
+	if network != "tcp" {
+		wasTrimmed := trimUDPResponse(d.config, resp)
+
+		// Flag that there are more records to return in the UDP response
+		if wasTrimmed && d.config.EnableTruncate {
+			resp.Truncated = true
+		}
+	}
+
+	// If the answer is empty and the response isn't truncated, return not found
+	if len(resp.Answer) == 0 && !resp.Truncated {
+		d.addSOA(d.domain, resp)
+		return
+	}
+
+}
+
 // serviceLookup is used to handle a service query
 func (d *DNSServer) serviceLookup(network, datacenter, service, tag string, req, resp *dns.Msg) {
 	// Make an RPC request
@@ -809,6 +876,19 @@ RPC:
 		d.addSOA(d.domain, resp)
 		return
 	}
+}
+
+// kvsTextRecords is used to add the entry records for a TXT lookup.
+func (d *DNSServer) kvsTextRecords(dc string, entries structs.DirEntries, req, resp *dns.Msg) {
+    qName := req.Question[0].Name
+    qType := req.Question[0].qType
+
+    for _, entry := range entries {
+        records := d.formatTextRecord(entry, qName, qType)
+        if records != nil {
+            resp.Answer = append(resp.Anser, records...)
+        }
+    }
 }
 
 // serviceNodeRecords is used to add the node records for a service lookup
