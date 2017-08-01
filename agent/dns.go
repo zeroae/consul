@@ -377,9 +377,9 @@ INVALID:
 
 // nodeLookup is used to handle a node query
 func (d *DNSServer) nodeLookup(network, datacenter, node string, req, resp *dns.Msg) {
-	// Only handle ANY, A and AAAA type requests
+	// Only handle ANY, A, AAAA and TXT type requests
 	qType := req.Question[0].Qtype
-	if qType != dns.TypeANY && qType != dns.TypeA && qType != dns.TypeAAAA {
+	if qType != dns.TypeANY && qType != dns.TypeA && qType != dns.TypeAAAA && qType != dns.TypeTXT {
 		return
 	}
 
@@ -429,7 +429,19 @@ RPC:
 	}
 }
 
-// formatNodeRecord takes a Node and returns an A, AAAA, or CNAME record
+// formatTxtRecords takes a kv-map and returns it as "[k=]v" for non-empty k not starting with rfc1035-
+func (d *DNSServer) formatTxtRecords(meta map[string]string) (txt []string) {
+	for k, v := range meta {
+		if strings.HasPrefix(k, "rfc1035-") {
+			txt = append(txt, v)
+		} else {
+			txt = append(txt, k+"="+v)
+		}
+	}
+	return txt
+}
+
+// formatNodeRecord takes a Node and returns an A, AAAA, TXT or CNAME record
 func (d *DNSServer) formatNodeRecord(node *structs.Node, addr, qName string, qType uint16, ttl time.Duration, edns bool) (records []dns.RR) {
 	// Parse the IP
 	ip := net.ParseIP(addr)
@@ -460,8 +472,19 @@ func (d *DNSServer) formatNodeRecord(node *structs.Node, addr, qName string, qTy
 			AAAA: ip,
 		}}
 
+	case len(node.Meta) > 0 && qType == dns.TypeTXT:
+		return []dns.RR{&dns.TXT{
+			Hdr: dns.RR_Header{
+				Name:   qName,
+				Rrtype: dns.TypeTXT,
+				Class:  dns.ClassINET,
+				Ttl:    uint32(ttl / time.Second),
+			},
+			Txt: d.formatTxtRecords(node.Meta),
+		}}
+
 	case ip == nil && (qType == dns.TypeANY || qType == dns.TypeCNAME ||
-		qType == dns.TypeA || qType == dns.TypeAAAA):
+		qType == dns.TypeA || qType == dns.TypeAAAA || qType == dns.TypeTXT):
 		// Get the CNAME
 		cnRec := &dns.CNAME{
 			Hdr: dns.RR_Header{
@@ -480,7 +503,7 @@ func (d *DNSServer) formatNodeRecord(node *structs.Node, addr, qName string, qTy
 	MORE_REC:
 		for _, rr := range more {
 			switch rr.Header().Rrtype {
-			case dns.TypeCNAME, dns.TypeA, dns.TypeAAAA:
+			case dns.TypeCNAME, dns.TypeA, dns.TypeAAAA, dns.TypeTXT:
 				records = append(records, rr)
 				extra++
 				if extra == maxRecurseRecords && !edns {
