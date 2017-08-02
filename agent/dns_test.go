@@ -393,7 +393,7 @@ func TestDNS_NodeLookup_TXT(t *testing.T) {
 		t.Fatalf("err: %v", err)
 	}
 
-	// Should have the 1 TXT record reply with 4 values
+	// Should have the 1 TXT record reply
 	if len(in.Answer) != 1 {
 		t.Fatalf("Bad: %#v", in)
 	}
