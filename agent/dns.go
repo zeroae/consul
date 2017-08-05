@@ -449,9 +449,10 @@ func (d *DNSServer) formatNodeRecord(node *structs.Node, addr, qName string, qTy
 	if ip != nil {
 		ipv4 = ip.To4()
 	}
+
 	switch {
 	case ipv4 != nil && (qType == dns.TypeANY || qType == dns.TypeA):
-		return []dns.RR{&dns.A{
+		records = append(records, &dns.A{
 			Hdr: dns.RR_Header{
 				Name:   qName,
 				Rrtype: dns.TypeA,
@@ -459,10 +460,10 @@ func (d *DNSServer) formatNodeRecord(node *structs.Node, addr, qName string, qTy
 				Ttl:    uint32(ttl / time.Second),
 			},
 			A: ip,
-		}}
+		})
 
 	case ip != nil && ipv4 == nil && (qType == dns.TypeANY || qType == dns.TypeAAAA):
-		return []dns.RR{&dns.AAAA{
+		records = append(records, &dns.AAAA{
 			Hdr: dns.RR_Header{
 				Name:   qName,
 				Rrtype: dns.TypeAAAA,
@@ -470,18 +471,7 @@ func (d *DNSServer) formatNodeRecord(node *structs.Node, addr, qName string, qTy
 				Ttl:    uint32(ttl / time.Second),
 			},
 			AAAA: ip,
-		}}
-
-	case len(node.Meta) > 0 && qType == dns.TypeTXT:
-		return []dns.RR{&dns.TXT{
-			Hdr: dns.RR_Header{
-				Name:   qName,
-				Rrtype: dns.TypeTXT,
-				Class:  dns.ClassINET,
-				Ttl:    uint32(ttl / time.Second),
-			},
-			Txt: d.formatTxtRecords(node.Meta),
-		}}
+		})
 
 	case ip == nil && (qType == dns.TypeANY || qType == dns.TypeCNAME ||
 		qType == dns.TypeA || qType == dns.TypeAAAA || qType == dns.TypeTXT):
@@ -512,6 +502,19 @@ func (d *DNSServer) formatNodeRecord(node *structs.Node, addr, qName string, qTy
 			}
 		}
 	}
+
+	if len(node.Meta) > 0 && (qType == dns.TypeANY || qType == dns.TypeTXT) {
+		records = append(records, &dns.TXT{
+			Hdr: dns.RR_Header{
+				Name:   qName,
+				Rrtype: dns.TypeTXT,
+				Class:  dns.ClassINET,
+				Ttl:    uint32(ttl / time.Second),
+			},
+			Txt: d.formatTxtRecords(node.Meta),
+		})
+	}
+
 	return records
 }
 
