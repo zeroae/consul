@@ -57,8 +57,9 @@ we can instead use `foo.node.consul.` This convention allows for terse
 syntax where appropriate while supporting queries of nodes in remote
 datacenters as necessary.
 
-For a node lookup, the only records returned are A records containing
-the IP address of the node.
+For a node lookup, the only records returned are A and AAAA records 
+containing the IP address, and TXT records containing the 
+`node_meta` values of the node.
 
 ```text
 $ dig @127.0.0.1 -p 8600 foo.node.consul ANY
